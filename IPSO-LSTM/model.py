@@ -1,8 +1,9 @@
 import tensorflow.keras.backend as K
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Layer, Dense, LSTM,Bidirectional,Input
+from tensorflow.keras.layers import Dense, LSTM,Input,Dropout, Bidirectional
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.regularizers import l2
 
 def split_data(data, n):
     in_ = []
@@ -40,19 +41,41 @@ def result(real,pred,name):
 
 
 class LSTM_(object):
-    def __init__(self, seq,feat_dim,hidden_unit1,hidden_unit2,fc,output_dim):
+    def __init__(self, seq, feat_dim, hidden_unit1, hidden_unit2, fc, output_dim):
         self.input_dim = seq
         self.feat_dim = feat_dim
         self.units1 = hidden_unit1
         self.units2 = hidden_unit2
-        self.fc=fc
+        self.fc = fc
         self.output_dim = output_dim
+
     def build_model(self):
-        inp = Input(shape=(self.input_dim, self.feat_dim))        
-        hout = LSTM(self.units1, return_sequences=True)(inp)
-        hout = LSTM(self.units2, return_sequences=False)(hout)
-        dense = Dense(self.fc, activation='relu')(hout)
-        out = Dense(self.output_dim, activation=None)(dense)
+        inp = Input(shape=(self.input_dim, self.feat_dim))
+        
+        # 第一层：双向LSTM + Dropout + L2正则
+        lstm1 = Bidirectional(LSTM(
+            self.units1, 
+            return_sequences=True,
+            kernel_regularizer=l2(1e-4),
+            recurrent_regularizer=l2(1e-4)
+        ))(inp)
+        lstm1 = Dropout(0.3)(lstm1)
+        
+        # 第二层：双向LSTM + Dropout + L2正则
+        lstm2 = Bidirectional(LSTM(
+            self.units2, 
+            return_sequences=False,
+            kernel_regularizer=l2(1e-4),
+            recurrent_regularizer=l2(1e-4)
+        ))(lstm1)
+        lstm2 = Dropout(0.3)(lstm2)
+        
+        # 全连接层
+        dense = Dense(self.fc, activation='relu', kernel_regularizer=l2(1e-4))(lstm2)
+        
+        # 输出层：ReLU激活，强制非负输出
+        out = Dense(self.output_dim, activation='relu')(dense)
+        
         model = Model(inputs=inp, outputs=out)
         return model
 
